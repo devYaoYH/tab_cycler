@@ -183,10 +183,7 @@ class TabCycler {
 
     console.log(`Starting tab cycling with ${this.tabs.length} tabs, ${this.settings.tabDuration}ms duration`);
 
-    // Start immediately, then set up interval
-    await this.cycleToNextTab();
-
-    // Set up interval for cycling
+    // Set up interval for cycling - start after the first duration
     this.cycleInterval = setInterval(() => {
       this.cycleToNextTab();
     }, this.settings.tabDuration);
