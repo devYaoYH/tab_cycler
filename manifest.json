@@ -6,7 +6,8 @@
   "permissions": [
     "tabs",
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "commands": {
     "stop-scrolling": {

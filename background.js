@@ -287,9 +287,24 @@ class TabCycler {
         return; // Success, exit retry loop
       } catch (error) {
         console.log(`Scroll message attempt ${i + 1} failed for tab ${tabId}:`, error.message);
+        
+        // If connection failed, try to inject content script
+        if (error.message.includes('Could not establish connection') && i < retries - 1) {
+          console.log(`Attempting to inject content script into tab ${tabId}`);
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: tabId },
+              files: ['content.js']
+            });
+            console.log(`Successfully injected content script into tab ${tabId}`);
+          } catch (injectionError) {
+            console.log(`Failed to inject content script into tab ${tabId}:`, injectionError.message);
+          }
+        }
+        
         if (i < retries - 1) {
           // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
     }
