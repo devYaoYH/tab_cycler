@@ -5,6 +5,7 @@ class TabCycler {
     this.tabs = [];
     this.cycleInterval = null;
     this.currentWindowId = null;
+    this.commandListenerSetup = false;
     this.settings = {
       tabDuration: 10000, // 10 seconds default
       enabled: false,
@@ -60,16 +61,8 @@ class TabCycler {
         });
       }
 
-      // Listen for keyboard commands - check if commands API is available
-      if (chrome.commands && chrome.commands.onCommand) {
-        chrome.commands.onCommand.addListener((command) => {
-          if (command === 'stop-scrolling') {
-            this.stopAllScrolling();
-          }
-        });
-      } else {
-        console.log('chrome.commands API not available during initialization');
-      }
+      // Listen for keyboard commands - set up with retry mechanism
+      this.setupCommandListener();
 
       // Listen for messages from popup
       if (chrome.runtime && chrome.runtime.onMessage) {
@@ -81,6 +74,40 @@ class TabCycler {
     } catch (error) {
       console.error('Error during TabCycler initialization:', error);
     }
+  }
+
+  setupCommandListener() {
+    // Avoid setting up duplicate listeners
+    if (this.commandListenerSetup) {
+      return;
+    }
+
+    // Try to set up command listener with retry mechanism
+    const trySetupCommands = (attempt = 1, maxAttempts = 5) => {
+      if (chrome.commands && chrome.commands.onCommand) {
+        try {
+          chrome.commands.onCommand.addListener((command) => {
+            if (command === 'stop-scrolling') {
+              this.stopAllScrolling();
+            }
+          });
+          console.log('Command listener successfully set up');
+          this.commandListenerSetup = true;
+          return;
+        } catch (error) {
+          console.log(`Failed to set up command listener on attempt ${attempt}:`, error);
+        }
+      }
+      
+      if (attempt < maxAttempts) {
+        console.log(`chrome.commands API not ready, retrying in ${attempt * 500}ms (attempt ${attempt}/${maxAttempts})`);
+        setTimeout(() => trySetupCommands(attempt + 1, maxAttempts), attempt * 500);
+      } else {
+        console.warn('Failed to set up command listener after all attempts. Keyboard shortcuts may not work.');
+      }
+    };
+
+    trySetupCommands();
   }
 
   async loadSettings() {
