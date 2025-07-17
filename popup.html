@@ -83,6 +83,15 @@
       background: #da190b;
     }
 
+    .stop-scroll-btn {
+      background: #ff9800;
+      color: white;
+    }
+
+    .stop-scroll-btn:hover {
+      background: #e68900;
+    }
+
     .settings {
       background: white;
       padding: 15px;
@@ -153,6 +162,10 @@
     <button class="stop-btn" id="stopBtn">Stop Cycling</button>
   </div>
 
+  <div class="controls">
+    <button class="stop-scroll-btn" id="stopScrollBtn">Stop Scrolling Only</button>
+  </div>
+
   <div class="settings">
     <div class="setting-group">
       <label for="tabDuration">Tab Duration (seconds)</label>
@@ -174,6 +187,11 @@
   </div>
 
   <div class="tab-count" id="tabCount">Loading...</div>
+  
+  <div class="help-text" style="text-align: center; margin-top: 10px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+    <strong>Keyboard Shortcut:</strong><br>
+    Ctrl+Shift+S (Cmd+Shift+S on Mac) to stop scrolling
+  </div>
 
   <script src="popup.js"></script>
 </body>

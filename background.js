@@ -32,6 +32,21 @@ class TabCycler {
       }
     });
 
+    // Listen for window focus changes
+    chrome.windows.onFocusChanged.addListener((windowId) => {
+      if (windowId === chrome.windows.WINDOW_ID_NONE) {
+        // No window focused, stop all scrolling
+        this.stopAllScrolling();
+      }
+    });
+
+    // Listen for keyboard commands
+    chrome.commands.onCommand.addListener((command) => {
+      if (command === 'stop-scrolling') {
+        this.stopAllScrolling();
+      }
+    });
+
     // Listen for messages from popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sendResponse);
@@ -57,7 +72,9 @@ class TabCycler {
 
   async refreshTabList() {
     try {
-      this.tabs = await chrome.tabs.query({ currentWindow: true });
+      // Get the currently focused window
+      const currentWindow = await chrome.windows.getCurrent();
+      this.tabs = await chrome.tabs.query({ windowId: currentWindow.id });
       // Filter out extension pages and chrome:// pages
       this.tabs = this.tabs.filter(tab => 
         !tab.url.startsWith('chrome://') && 
@@ -65,6 +82,20 @@ class TabCycler {
       );
     } catch (error) {
       console.error('Failed to get tabs:', error);
+    }
+  }
+
+  async stopAllScrolling() {
+    // Send stop message to all tabs in all windows
+    try {
+      const allTabs = await chrome.tabs.query({});
+      allTabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }).catch(() => {
+          // Ignore errors for tabs that don't have content script
+        });
+      });
+    } catch (error) {
+      console.error('Failed to stop all scrolling:', error);
     }
   }
 
@@ -114,19 +145,26 @@ class TabCycler {
     const currentTab = this.tabs[this.currentTabIndex];
     if (currentTab) {
       try {
-        // Switch to the tab
-        await chrome.tabs.update(currentTab.id, { active: true });
+        // Check if the tab's window is currently focused
+        const tabWindow = await chrome.windows.get(currentTab.windowId);
+        const currentWindow = await chrome.windows.getCurrent();
         
-        // Send message to content script to start scrolling after delay
-        setTimeout(() => {
-          chrome.tabs.sendMessage(currentTab.id, {
-            action: 'startScrolling',
-            scrollDelay: this.settings.scrollDelay,
-            scrollSpeed: this.settings.scrollSpeed
-          }).catch(() => {
-            // Ignore errors for tabs that don't have content script
-          });
-        }, 100);
+        // Only proceed if the tab is in the currently focused window
+        if (tabWindow.id === currentWindow.id && tabWindow.focused) {
+          // Switch to the tab
+          await chrome.tabs.update(currentTab.id, { active: true });
+          
+          // Send message to content script to start scrolling after delay
+          setTimeout(() => {
+            chrome.tabs.sendMessage(currentTab.id, {
+              action: 'startScrolling',
+              scrollDelay: this.settings.scrollDelay,
+              scrollSpeed: this.settings.scrollSpeed
+            }).catch(() => {
+              // Ignore errors for tabs that don't have content script
+            });
+          }, 100);
+        }
         
       } catch (error) {
         console.error('Failed to switch tab:', error);
@@ -156,6 +194,10 @@ class TabCycler {
         break;
       case 'stop':
         this.stop();
+        sendResponse({ success: true });
+        break;
+      case 'stopScrolling':
+        this.stopAllScrolling();
         sendResponse({ success: true });
         break;
       case 'getStatus':

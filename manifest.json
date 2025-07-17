@@ -8,6 +8,15 @@
     "activeTab",
     "storage"
   ],
+  "commands": {
+    "stop-scrolling": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Stop auto-scrolling"
+    }
+  },
   "background": {
     "service_worker": "background.js"
   },

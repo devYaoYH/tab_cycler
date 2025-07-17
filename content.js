@@ -35,6 +35,11 @@ class AutoScroller {
   }
 
   startScrolling(delay = this.scrollDelay, speed = this.scrollSpeed) {
+    // Only start scrolling if the window is focused and the tab is visible
+    if (document.hidden || !document.hasFocus()) {
+      return;
+    }
+
     if (this.isScrolling) {
       this.stopScrolling();
     }
@@ -47,8 +52,11 @@ class AutoScroller {
     
     // Wait for the specified delay before starting to scroll
     this.scrollTimeout = setTimeout(() => {
-      this.isScrolling = true;
-      this.beginAutoScroll();
+      // Double-check that the window is still focused before starting
+      if (!document.hidden && document.hasFocus()) {
+        this.isScrolling = true;
+        this.beginAutoScroll();
+      }
     }, delay);
   }
 
@@ -71,6 +79,12 @@ class AutoScroller {
 
     const scrollStep = () => {
       if (!this.isScrolling) return;
+
+      // Stop scrolling if window loses focus or tab becomes hidden
+      if (document.hidden || !document.hasFocus()) {
+        this.stopScrolling();
+        return;
+      }
 
       const currentScrollY = window.scrollY;
       const maxScrollY = Math.max(
@@ -128,4 +142,14 @@ document.addEventListener('visibilitychange', () => {
     // Page is hidden, stop scrolling
     autoScroller.stopScrolling();
   }
+});
+
+// Handle window focus changes
+window.addEventListener('blur', () => {
+  // Window lost focus, stop scrolling
+  autoScroller.stopScrolling();
+});
+
+window.addEventListener('focus', () => {
+  // Window gained focus - scrolling will be restarted by the background script if needed
 });
