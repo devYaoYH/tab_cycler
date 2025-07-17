@@ -16,52 +16,71 @@ class TabCycler {
   }
 
   async init() {
-    // Load settings from storage
-    await this.loadSettings();
+    try {
+      // Load settings from storage
+      await this.loadSettings();
 
-    // Listen for tab updates
-    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-      if (changeInfo.status === 'complete' && this.isRunning) {
-        this.refreshTabList();
+      // Listen for tab updates
+      if (chrome.tabs && chrome.tabs.onUpdated) {
+        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+          if (changeInfo.status === 'complete' && this.isRunning) {
+            this.refreshTabList();
+          }
+        });
       }
-    });
 
-    // Listen for tab removal
-    chrome.tabs.onRemoved.addListener(() => {
-      if (this.isRunning) {
-        this.refreshTabList();
+      // Listen for tab removal
+      if (chrome.tabs && chrome.tabs.onRemoved) {
+        chrome.tabs.onRemoved.addListener(() => {
+          if (this.isRunning) {
+            this.refreshTabList();
+          }
+        });
       }
-    });
 
-    // Listen for tab creation
-    chrome.tabs.onCreated.addListener(() => {
-      if (this.isRunning) {
-        setTimeout(() => this.refreshTabList(), 500); // Small delay for tab to load
+      // Listen for tab creation
+      if (chrome.tabs && chrome.tabs.onCreated) {
+        chrome.tabs.onCreated.addListener(() => {
+          if (this.isRunning) {
+            setTimeout(() => this.refreshTabList(), 500); // Small delay for tab to load
+          }
+        });
       }
-    });
 
-    // Listen for window focus changes
-    chrome.windows.onFocusChanged.addListener((windowId) => {
-      if (windowId === chrome.windows.WINDOW_ID_NONE) {
-        // No window focused, stop all scrolling
-        this.stopAllScrolling();
-      } else if (this.isRunning) {
-        this.currentWindowId = windowId;
-        setTimeout(() => this.refreshTabList(), 100);
+      // Listen for window focus changes
+      if (chrome.windows && chrome.windows.onFocusChanged) {
+        chrome.windows.onFocusChanged.addListener((windowId) => {
+          if (windowId === chrome.windows.WINDOW_ID_NONE) {
+            // No window focused, stop all scrolling
+            this.stopAllScrolling();
+          } else if (this.isRunning) {
+            this.currentWindowId = windowId;
+            setTimeout(() => this.refreshTabList(), 100);
+          }
+        });
       }
-    });
 
-    // Listen for keyboard commands
-    chrome.commands.onCommand.addListener((command) => {
-      if (command === 'stop-scrolling') {
-        this.stopAllScrolling();
+      // Listen for keyboard commands - check if commands API is available
+      if (chrome.commands && chrome.commands.onCommand) {
+        chrome.commands.onCommand.addListener((command) => {
+          if (command === 'stop-scrolling') {
+            this.stopAllScrolling();
+          }
+        });
+      } else {
+        console.log('chrome.commands API not available during initialization');
       }
-    });
 
-    // Listen for messages from popup
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      this.handleMessage(message, sendResponse);
-    });
+      // Listen for messages from popup
+      if (chrome.runtime && chrome.runtime.onMessage) {
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+          this.handleMessage(message, sendResponse);
+          return true; // Keep the message channel open for async responses
+        });
+      }
+    } catch (error) {
+      console.error('Error during TabCycler initialization:', error);
+    }
   }
 
   async loadSettings() {
@@ -121,8 +140,12 @@ class TabCycler {
     try {
       const allTabs = await chrome.tabs.query({});
       allTabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }).catch(() => {
-          // Ignore errors for tabs that don't have content script
+        chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }, (response) => {
+          // Check for runtime errors and ignore them
+          if (chrome.runtime.lastError) {
+            // This is expected for tabs without content scripts
+            return;
+          }
         });
       });
     } catch (error) {
@@ -169,8 +192,12 @@ class TabCycler {
 
     // Send stop message to all content scripts
     this.tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }).catch(() => {
-        // Ignore errors for tabs that don't have content script
+      chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }, (response) => {
+        // Check for runtime errors and ignore them
+        if (chrome.runtime.lastError) {
+          // This is expected for tabs without content scripts
+          return;
+        }
       });
     });
   }
@@ -256,14 +283,22 @@ class TabCycler {
   async sendScrollMessage(tabId, retries = 3) {
     for (let i = 0; i < retries; i++) {
       try {
-        await chrome.tabs.sendMessage(tabId, {
-          action: 'startScrolling',
-          scrollDelay: this.settings.scrollDelay,
-          scrollSpeed: this.settings.scrollSpeed
+        await new Promise((resolve, reject) => {
+          chrome.tabs.sendMessage(tabId, {
+            action: 'startScrolling',
+            scrollDelay: this.settings.scrollDelay,
+            scrollSpeed: this.settings.scrollSpeed
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(response);
+            }
+          });
         });
         return; // Success, exit retry loop
       } catch (error) {
-        console.log(`Scroll message attempt ${i + 1} failed:`, error);
+        console.log(`Scroll message attempt ${i + 1} failed:`, error.message);
         if (i < retries - 1) {
           // Wait before retrying
           await new Promise(resolve => setTimeout(resolve, 200));
