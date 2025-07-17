@@ -4,6 +4,7 @@ class TabCycler {
     this.currentTabIndex = 0;
     this.tabs = [];
     this.cycleInterval = null;
+    this.currentWindowId = null;
     this.settings = {
       tabDuration: 10000, // 10 seconds default
       enabled: false,
@@ -32,6 +33,21 @@ class TabCycler {
       }
     });
 
+    // Listen for tab creation
+    chrome.tabs.onCreated.addListener(() => {
+      if (this.isRunning) {
+        setTimeout(() => this.refreshTabList(), 500); // Small delay for tab to load
+      }
+    });
+
+    // Listen for window focus changes
+    chrome.windows.onFocusChanged.addListener((windowId) => {
+      if (windowId !== chrome.windows.WINDOW_ID_NONE && this.isRunning) {
+        this.currentWindowId = windowId;
+        setTimeout(() => this.refreshTabList(), 100);
+      }
+    });
+
     // Listen for messages from popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sendResponse);
@@ -57,12 +73,34 @@ class TabCycler {
 
   async refreshTabList() {
     try {
-      this.tabs = await chrome.tabs.query({ currentWindow: true });
-      // Filter out extension pages and chrome:// pages
-      this.tabs = this.tabs.filter(tab => 
-        !tab.url.startsWith('chrome://') && 
-        !tab.url.startsWith('chrome-extension://')
-      );
+      // Get the current window if not set
+      if (!this.currentWindowId) {
+        const currentWindow = await chrome.windows.getCurrent();
+        this.currentWindowId = currentWindow.id;
+      }
+
+      this.tabs = await chrome.tabs.query({ 
+        windowId: this.currentWindowId 
+      });
+      
+      // Filter out extension pages, chrome:// pages, but keep more valid URLs
+      this.tabs = this.tabs.filter(tab => {
+        const url = tab.url || '';
+        return (
+          !url.startsWith('chrome://') && 
+          !url.startsWith('chrome-extension://') &&
+          !url.startsWith('moz-extension://') &&
+          !url.startsWith('edge-extension://') &&
+          !url.startsWith('about:') &&
+          !url.startsWith('data:') &&
+          !url.startsWith('blob:') &&
+          url !== '' &&
+          tab.id && 
+          !tab.discarded &&
+          tab.status === 'complete' // Only include fully loaded tabs
+        );
+      });
+      console.log(`Found ${this.tabs.length} valid tabs for cycling in window ${this.currentWindowId}:`, this.tabs.map(t => ({ id: t.id, title: t.title?.substring(0, 50) })));
     } catch (error) {
       console.error('Failed to get tabs:', error);
     }
@@ -77,12 +115,17 @@ class TabCycler {
     await this.refreshTabList();
     
     if (this.tabs.length === 0) {
-      console.log('No valid tabs to cycle through');
+      console.warn('No valid tabs to cycle through. Make sure you have regular web pages open (not just chrome:// or extension pages)');
+      this.isRunning = false;
+      this.settings.enabled = false;
       return;
     }
 
+    console.log(`Starting tab cycling with ${this.tabs.length} tabs, ${this.settings.tabDuration}ms duration`);
     this.currentTabIndex = 0;
-    this.cycleToNextTab();
+    
+    // Start immediately, then set up interval
+    await this.cycleToNextTab();
     
     // Set up interval for cycling
     this.cycleInterval = setInterval(() => {
@@ -111,11 +154,50 @@ class TabCycler {
   async cycleToNextTab() {
     if (!this.isRunning || this.tabs.length === 0) return;
 
+    // Refresh tab list to handle closed tabs
+    await this.refreshTabList();
+    if (this.tabs.length === 0) {
+      console.warn('No more valid tabs, stopping cycling');
+      await this.stop();
+      return;
+    }
+
+    // Ensure currentTabIndex is within bounds
+    if (this.currentTabIndex >= this.tabs.length) {
+      this.currentTabIndex = 0;
+    }
+
     const currentTab = this.tabs[this.currentTabIndex];
-    if (currentTab) {
+    if (currentTab && currentTab.id) {
       try {
-        // Switch to the tab
-        await chrome.tabs.update(currentTab.id, { active: true });
+        // Check if tab still exists before switching
+        const tabExists = await chrome.tabs.get(currentTab.id).catch(() => null);
+        if (!tabExists) {
+          console.log(`Tab ${currentTab.id} no longer exists, skipping`);
+          this.currentTabIndex = (this.currentTabIndex + 1) % this.tabs.length;
+          return;
+        }
+
+        console.log(`Switching to tab ${currentTab.id}: ${currentTab.url}`);
+        
+        // Add retry logic for tab switching
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            await chrome.tabs.update(currentTab.id, { active: true });
+            break; // Success, exit retry loop
+          } catch (error) {
+            retryCount++;
+            if (error.message.includes('user may be dragging')) {
+              console.log(`Tab switch blocked (user interaction), retry ${retryCount}/${maxRetries}`);
+              await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before retry
+            } else {
+              throw error; // Re-throw if it's a different error
+            }
+          }
+        }
         
         // Send message to content script to start scrolling after delay
         setTimeout(() => {
@@ -123,13 +205,15 @@ class TabCycler {
             action: 'startScrolling',
             scrollDelay: this.settings.scrollDelay,
             scrollSpeed: this.settings.scrollSpeed
-          }).catch(() => {
-            // Ignore errors for tabs that don't have content script
+          }).catch((error) => {
+            // Log but don't throw - some pages may not accept content scripts
+            console.log(`Could not send scroll message to tab ${currentTab.id}:`, error.message);
           });
         }, 100);
         
       } catch (error) {
-        console.error('Failed to switch tab:', error);
+        console.error(`Failed to switch to tab ${currentTab.id}:`, error.message);
+        // Continue to next tab even if this one failed
       }
     }
 
