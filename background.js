@@ -118,15 +118,18 @@ class TabCycler {
         await chrome.tabs.update(currentTab.id, { active: true });
         
         // Send message to content script to start scrolling after delay
-        setTimeout(() => {
-          chrome.tabs.sendMessage(currentTab.id, {
-            action: 'startScrolling',
-            scrollDelay: this.settings.scrollDelay,
-            scrollSpeed: this.settings.scrollSpeed
-          }).catch(() => {
-            // Ignore errors for tabs that don't have content script
-          });
-        }, 100);
+        // Wait longer to ensure content script is loaded and page is ready
+        setTimeout(async () => {
+          try {
+            // First ensure the tab is focused by updating it again
+            await chrome.tabs.update(currentTab.id, { active: true });
+            
+            // Then send the scrolling message with retry logic
+            await this.sendScrollMessage(currentTab.id);
+          } catch (error) {
+            console.log('Failed to send scroll message:', error);
+          }
+        }, 500); // Increased delay to 500ms
         
       } catch (error) {
         console.error('Failed to switch tab:', error);
@@ -135,6 +138,26 @@ class TabCycler {
 
     // Move to next tab
     this.currentTabIndex = (this.currentTabIndex + 1) % this.tabs.length;
+  }
+
+  async sendScrollMessage(tabId, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'startScrolling',
+          scrollDelay: this.settings.scrollDelay,
+          scrollSpeed: this.settings.scrollSpeed
+        });
+        return; // Success, exit retry loop
+      } catch (error) {
+        console.log(`Scroll message attempt ${i + 1} failed:`, error);
+        if (i < retries - 1) {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+    }
+    console.log(`Failed to send scroll message to tab ${tabId} after ${retries} attempts`);
   }
 
   async updateSettings(newSettings) {
