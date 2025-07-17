@@ -83,14 +83,6 @@
       background: #da190b;
     }
 
-    .stop-scroll-btn {
-      background: #ff9800;
-      color: white;
-    }
-
-    .stop-scroll-btn:hover {
-      background: #e68900;
-    }
 
     .settings {
       background: white;
@@ -162,14 +154,11 @@
     <button class="stop-btn" id="stopBtn">Stop Cycling</button>
   </div>
 
-  <div class="controls">
-    <button class="stop-scroll-btn" id="stopScrollBtn">Stop Scrolling Only</button>
-  </div>
 
   <div class="settings">
     <div class="setting-group">
       <label for="tabDuration">Tab Duration (seconds)</label>
-      <input type="number" id="tabDuration" min="1" max="300" value="10">
+      <input type="number" id="tabDuration" min="5" max="300" value="5">
       <div class="help-text">How long to stay on each tab</div>
     </div>
 

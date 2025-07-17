@@ -11,7 +11,6 @@ class PopupController {
     this.statusTextElement = document.getElementById('statusText');
     this.startBtn = document.getElementById('startBtn');
     this.stopBtn = document.getElementById('stopBtn');
-    this.stopScrollBtn = document.getElementById('stopScrollBtn');
     this.tabDurationInput = document.getElementById('tabDuration');
     this.scrollDelayInput = document.getElementById('scrollDelay');
     this.scrollSpeedInput = document.getElementById('scrollSpeed');
@@ -20,7 +19,6 @@ class PopupController {
     // Set up event listeners
     this.startBtn.addEventListener('click', () => this.startCycling());
     this.stopBtn.addEventListener('click', () => this.stopCycling());
-    this.stopScrollBtn.addEventListener('click', () => this.stopScrollingOnly());
     
     // Add input event listeners for real-time settings update
     this.tabDurationInput.addEventListener('input', () => this.updateSettings());
@@ -94,15 +92,6 @@ class PopupController {
     });
   }
 
-  async stopScrollingOnly() {
-    chrome.runtime.sendMessage({ action: 'stopScrolling' }, (response) => {
-      // Note: This doesn't change the cycling state, only stops scrolling
-      if (response && response.success) {
-        // Could add visual feedback here if needed
-        console.log('Scrolling stopped');
-      }
-    });
-  }
 
   async updateSettings() {
     const newSettings = {

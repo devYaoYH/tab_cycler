@@ -3,9 +3,8 @@ class TabCycler {
     this.isRunning = false;
     this.tabs = [];
     this.cycleInterval = null;
-    this.commandListenerSetup = false;
     this.settings = {
-      tabDuration: 10000, // 10 seconds default
+      tabDuration: 5000, // 5 seconds default
       enabled: false,
       scrollDelay: 2000, // 2 seconds before scrolling starts
       scrollSpeed: 50 // pixels per scroll
@@ -56,8 +55,6 @@ class TabCycler {
         });
       }
 
-      // Listen for keyboard commands - set up with retry mechanism
-      this.setupCommandListener();
 
       // Listen for messages from popup
       if (chrome.runtime && chrome.runtime.onMessage) {
@@ -71,39 +68,6 @@ class TabCycler {
     }
   }
 
-  setupCommandListener() {
-    // Avoid setting up duplicate listeners
-    if (this.commandListenerSetup) {
-      return;
-    }
-
-    // Try to set up command listener with retry mechanism
-    const trySetupCommands = (attempt = 1, maxAttempts = 5) => {
-      if (chrome.commands && chrome.commands.onCommand) {
-        try {
-          chrome.commands.onCommand.addListener((command) => {
-            if (command === 'stop-scrolling') {
-              this.stopAllScrolling();
-            }
-          });
-          console.log('Command listener successfully set up');
-          this.commandListenerSetup = true;
-          return;
-        } catch (error) {
-          console.log(`Failed to set up command listener on attempt ${attempt}:`, error);
-        }
-      }
-      
-      if (attempt < maxAttempts) {
-        console.log(`chrome.commands API not ready, retrying in ${attempt * 500}ms (attempt ${attempt}/${maxAttempts})`);
-        setTimeout(() => trySetupCommands(attempt + 1, maxAttempts), attempt * 500);
-      } else {
-        console.warn('Failed to set up command listener after all attempts. Keyboard shortcuts may not work.');
-      }
-    };
-
-    trySetupCommands();
-  }
 
   async loadSettings() {
     try {
@@ -126,17 +90,13 @@ class TabCycler {
     try {
       // Get tabs in the current window
       const allTabs = await chrome.tabs.query({});
-      console.log(`Initial query found ${allTabs.length} total tabs`);
-      
-      // Filter to current window only
       const currentWindow = await chrome.windows.getCurrent();
       const currentWindowTabs = allTabs.filter(tab => tab.windowId === currentWindow.id);
-      console.log(`Found ${currentWindowTabs.length} tabs in current window (ID: ${currentWindow.id})`);
       
       // Filter out extension pages and chrome:// pages
       this.tabs = currentWindowTabs.filter(tab => {
         const url = tab.url || '';
-        const isValid = (
+        return (
           !url.startsWith('chrome://') && 
           !url.startsWith('chrome-extension://') &&
           !url.startsWith('moz-extension://') &&
@@ -145,27 +105,18 @@ class TabCycler {
           url !== '' &&
           tab.id
         );
-        
-        if (!isValid) {
-          console.log(`Filtered out tab: ${tab.id} - ${url}`);
-        }
-        
-        return isValid;
       });
-      console.log(`Found ${this.tabs.length} valid tabs for cycling:`, this.tabs.map(t => ({ id: t.id, title: t.title?.substring(0, 50) })));
     } catch (error) {
       console.error('Failed to get tabs:', error);
     }
   }
 
   async stopAllScrolling() {
-    // Detach debuggers from all tabs
     try {
       const allTabs = await chrome.tabs.query({});
       allTabs.forEach(tab => {
         this.detachDebugger(tab.id);
       });
-      console.log('Stopped all scrolling by detaching debuggers');
     } catch (error) {
       console.error('Failed to stop all scrolling:', error);
     }
@@ -186,7 +137,6 @@ class TabCycler {
       return;
     }
 
-    console.log(`Starting tab cycling with ${this.tabs.length} tabs, ${this.settings.tabDuration}ms duration`);
 
     // Set up interval for cycling - start after the first duration
     this.cycleInterval = setInterval(() => {
@@ -233,14 +183,12 @@ class TabCycler {
     const nextTab = this.tabs[nextTabIndex];
     if (nextTab && nextTab.id) {
       try {
-        console.log(`Switching to tab ${nextTab.id}: ${nextTab.title}`);
         
         // Switch to the next tab
         await chrome.tabs.update(nextTab.id, { active: true });
         
         // Start scrolling after a short delay
         setTimeout(() => {
-          console.log(`Starting debugger-based scrolling for tab ${nextTab.id}`);
           this.startScrollingWithDebugger(nextTab.id);
         }, 200);
         
@@ -251,8 +199,6 @@ class TabCycler {
   }
 
   async startScrollingWithDebugger(tabId) {
-    console.log(`Starting debugger-based scrolling for tab ${tabId}`);
-    
     try {
       // Attach debugger to the tab
       await new Promise((resolve, reject) => {
@@ -265,8 +211,6 @@ class TabCycler {
         });
       });
       
-      console.log(`Debugger attached to tab ${tabId}`);
-      
       // Enable Runtime domain
       await new Promise((resolve, reject) => {
         chrome.debugger.sendCommand({ tabId: tabId }, "Runtime.enable", {}, () => {
@@ -277,8 +221,6 @@ class TabCycler {
           }
         });
       });
-      
-      console.log(`Runtime domain enabled for tab ${tabId}`);
       
       // Reset scroll position to top
       await new Promise((resolve, reject) => {
@@ -293,8 +235,6 @@ class TabCycler {
         });
       });
       
-      console.log(`Scroll reset to top for tab ${tabId}`);
-      
       // Start scrolling after delay
       setTimeout(() => {
         this.scrollTabWithDebugger(tabId);
@@ -306,14 +246,11 @@ class TabCycler {
   }
 
   async scrollTabWithDebugger(tabId) {
-    console.log(`Starting auto-scroll for tab ${tabId}`);
-    
     const scrollInterval = setInterval(async () => {
       try {
         // Check if tab still exists and is active
         const tab = await chrome.tabs.get(tabId);
         if (!tab || !tab.active) {
-          console.log(`Tab ${tabId} no longer active, stopping scroll`);
           clearInterval(scrollInterval);
           this.detachDebugger(tabId);
           return;
@@ -346,7 +283,6 @@ class TabCycler {
         });
         
         if (reachedBottom) {
-          console.log(`Reached bottom of tab ${tabId}, stopping scroll`);
           clearInterval(scrollInterval);
           this.detachDebugger(tabId);
         }
@@ -363,13 +299,11 @@ class TabCycler {
     try {
       chrome.debugger.detach({ tabId: tabId }, () => {
         if (chrome.runtime.lastError) {
-          console.log(`Error detaching debugger from tab ${tabId}:`, chrome.runtime.lastError.message);
-        } else {
-          console.log(`Debugger detached from tab ${tabId}`);
+          // Ignore common detach errors
         }
       });
     } catch (error) {
-      console.error(`Failed to detach debugger from tab ${tabId}:`, error.message);
+      // Ignore detach errors
     }
   }
 
@@ -392,10 +326,6 @@ class TabCycler {
         break;
       case 'stop':
         this.stop();
-        sendResponse({ success: true });
-        break;
-      case 'stopScrolling':
-        this.stopAllScrolling();
         sendResponse({ success: true });
         break;
       case 'getStatus':
