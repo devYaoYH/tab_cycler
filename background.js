@@ -125,14 +125,18 @@ class TabCycler {
   async refreshTabList() {
     try {
       // Get tabs in the current window
-      this.tabs = await chrome.tabs.query({ 
-        currentWindow: true 
-      });
+      const allTabs = await chrome.tabs.query({});
+      console.log(`Initial query found ${allTabs.length} total tabs`);
+      
+      // Filter to current window only
+      const currentWindow = await chrome.windows.getCurrent();
+      const currentWindowTabs = allTabs.filter(tab => tab.windowId === currentWindow.id);
+      console.log(`Found ${currentWindowTabs.length} tabs in current window (ID: ${currentWindow.id})`);
       
       // Filter out extension pages and chrome:// pages
-      this.tabs = this.tabs.filter(tab => {
+      this.tabs = currentWindowTabs.filter(tab => {
         const url = tab.url || '';
-        return (
+        const isValid = (
           !url.startsWith('chrome://') && 
           !url.startsWith('chrome-extension://') &&
           !url.startsWith('moz-extension://') &&
@@ -141,6 +145,12 @@ class TabCycler {
           url !== '' &&
           tab.id
         );
+        
+        if (!isValid) {
+          console.log(`Filtered out tab: ${tab.id} - ${url}`);
+        }
+        
+        return isValid;
       });
       console.log(`Found ${this.tabs.length} valid tabs for cycling:`, this.tabs.map(t => ({ id: t.id, title: t.title?.substring(0, 50) })));
     } catch (error) {
