@@ -277,6 +277,9 @@ class TabCycler {
               reject(new Error(chrome.runtime.lastError.message));
             } else {
               console.log(`Successfully sent scroll message to tab ${tabId}, response:`, response);
+              if (response && response.debug) {
+                console.log(`Content script debug info for tab ${tabId}:`, response.debug);
+              }
               resolve(response);
             }
           });

@@ -186,6 +186,14 @@ class AutoScroller {
   }
 
   handleMessage(message, sendResponse) {
+    const debugInfo = {
+      url: window.location.href,
+      readyState: document.readyState,
+      hidden: document.hidden,
+      scrollY: window.scrollY,
+      action: message.action
+    };
+    
     console.log('Content script received message:', message);
     console.log('Current URL:', window.location.href);
     console.log('Document ready state:', document.readyState);
@@ -196,7 +204,12 @@ class AutoScroller {
         console.log(`Starting scrolling with delay: ${message.scrollDelay}ms, speed: ${message.scrollSpeed}px`);
         console.log('Current scroll position:', window.scrollY);
         this.startScrolling(message.scrollDelay, message.scrollSpeed);
-        sendResponse({ success: true, url: window.location.href });
+        sendResponse({ 
+          success: true, 
+          debug: debugInfo,
+          scrolling: this.isScrolling,
+          timeout: !!this.scrollTimeout
+        });
         break;
       case 'stopScrolling':
         console.log('Stopping scrolling');
