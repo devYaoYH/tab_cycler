@@ -64,12 +64,17 @@ class AutoScroller {
   }
 
   startScrolling(delay = this.scrollDelay, speed = this.scrollSpeed) {
+    console.log('startScrolling called with delay:', delay, 'speed:', speed);
+    console.log('Document hidden:', document.hidden);
+    
     // Only start scrolling if the tab is visible
     if (document.hidden) {
+      console.log('Not starting scrolling - document is hidden');
       return;
     }
 
     if (this.isScrolling) {
+      console.log('Already scrolling, stopping first');
       this.stopScrolling();
     }
 
@@ -77,14 +82,20 @@ class AutoScroller {
     this.scrollDelay = delay;
     
     // First scroll to top
+    console.log('Resetting scroll position');
     this.resetScroll();
     
     // Wait for the specified delay before starting to scroll
+    console.log('Setting timeout for', delay, 'ms');
     this.scrollTimeout = setTimeout(() => {
+      console.log('Timeout fired, checking if document is still visible');
       // Only check if tab is still visible (not hidden)
       if (!document.hidden) {
+        console.log('Starting auto scroll');
         this.isScrolling = true;
         this.beginAutoScroll();
+      } else {
+        console.log('Document is hidden, not starting auto scroll');
       }
     }, delay);
   }
@@ -104,16 +115,19 @@ class AutoScroller {
   }
 
   beginAutoScroll() {
+    console.log('beginAutoScroll called, isScrolling:', this.isScrolling);
     if (!this.isScrolling) return;
 
     let lastScrollY = window.scrollY;
     let stuckCounter = 0;
+    console.log('Starting auto scroll from position:', lastScrollY);
 
     const scrollStep = () => {
       if (!this.isScrolling) return;
 
       // Stop scrolling if tab becomes hidden
       if (document.hidden) {
+        console.log('Document became hidden, stopping scroll');
         this.stopScrolling();
         return;
       }
@@ -151,15 +165,19 @@ class AutoScroller {
 
       // Try different scroll methods for better compatibility
       try {
+        console.log(`Scrolling: current=${currentScrollY}, target=${currentScrollY + this.scrollSpeed}, speed=${this.scrollSpeed}`);
         // Method 1: Use scrollBy with smooth behavior
         window.scrollBy({
           top: this.scrollSpeed,
           left: 0,
           behavior: 'smooth'
         });
+        console.log('Used scrollBy method');
       } catch (e) {
+        console.log('scrollBy failed, using scrollTo fallback:', e);
         // Method 2: Fallback to direct scrollTo
         window.scrollTo(0, currentScrollY + this.scrollSpeed);
+        console.log('Used scrollTo fallback method');
       }
     };
 
@@ -169,11 +187,16 @@ class AutoScroller {
 
   handleMessage(message, sendResponse) {
     console.log('Content script received message:', message);
+    console.log('Current URL:', window.location.href);
+    console.log('Document ready state:', document.readyState);
+    console.log('Document hidden:', document.hidden);
+    
     switch (message.action) {
       case 'startScrolling':
         console.log(`Starting scrolling with delay: ${message.scrollDelay}ms, speed: ${message.scrollSpeed}px`);
+        console.log('Current scroll position:', window.scrollY);
         this.startScrolling(message.scrollDelay, message.scrollSpeed);
-        sendResponse({ success: true });
+        sendResponse({ success: true, url: window.location.href });
         break;
       case 'stopScrolling':
         console.log('Stopping scrolling');

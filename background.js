@@ -241,6 +241,7 @@ class TabCycler {
         
         // Start scrolling after a short delay
         setTimeout(() => {
+          console.log(`Attempting to send scroll message to tab ${nextTab.id}`);
           this.sendScrollMessage(nextTab.id);
         }, 200);
         
@@ -251,8 +252,10 @@ class TabCycler {
   }
 
   async sendScrollMessage(tabId, retries = 3) {
+    console.log(`sendScrollMessage called for tab ${tabId}, retries: ${retries}`);
     for (let i = 0; i < retries; i++) {
       try {
+        console.log(`Sending scroll message to tab ${tabId}, attempt ${i + 1}`);
         await new Promise((resolve, reject) => {
           chrome.tabs.sendMessage(tabId, {
             action: 'startScrolling',
@@ -260,15 +263,17 @@ class TabCycler {
             scrollSpeed: this.settings.scrollSpeed
           }, (response) => {
             if (chrome.runtime.lastError) {
+              console.log(`Chrome runtime error for tab ${tabId}:`, chrome.runtime.lastError.message);
               reject(new Error(chrome.runtime.lastError.message));
             } else {
+              console.log(`Successfully sent scroll message to tab ${tabId}, response:`, response);
               resolve(response);
             }
           });
         });
         return; // Success, exit retry loop
       } catch (error) {
-        console.log(`Scroll message attempt ${i + 1} failed:`, error.message);
+        console.log(`Scroll message attempt ${i + 1} failed for tab ${tabId}:`, error.message);
         if (i < retries - 1) {
           // Wait before retrying
           await new Promise(resolve => setTimeout(resolve, 200));
