@@ -159,18 +159,13 @@ class TabCycler {
   }
 
   async stopAllScrolling() {
-    // Send stop message to all tabs in all windows
+    // Detach debuggers from all tabs
     try {
       const allTabs = await chrome.tabs.query({});
       allTabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }, (response) => {
-          // Check for runtime errors and ignore them
-          if (chrome.runtime.lastError) {
-            // This is expected for tabs without content scripts
-            return;
-          }
-        });
+        this.detachDebugger(tab.id);
       });
+      console.log('Stopped all scrolling by detaching debuggers');
     } catch (error) {
       console.error('Failed to stop all scrolling:', error);
     }
@@ -209,15 +204,9 @@ class TabCycler {
       this.cycleInterval = null;
     }
 
-    // Send stop message to all content scripts
+    // Stop all scrolling by detaching debuggers
     this.tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, { action: 'stopScrolling' }, (response) => {
-        // Check for runtime errors and ignore them
-        if (chrome.runtime.lastError) {
-          // This is expected for tabs without content scripts
-          return;
-        }
-      });
+      this.detachDebugger(tab.id);
     });
   }
 
@@ -251,8 +240,8 @@ class TabCycler {
         
         // Start scrolling after a short delay
         setTimeout(() => {
-          console.log(`Attempting to send scroll message to tab ${nextTab.id}`);
-          this.sendScrollMessage(nextTab.id);
+          console.log(`Starting debugger-based scrolling for tab ${nextTab.id}`);
+          this.startScrollingWithDebugger(nextTab.id);
         }, 200);
         
       } catch (error) {
@@ -261,54 +250,127 @@ class TabCycler {
     }
   }
 
-  async sendScrollMessage(tabId, retries = 3) {
-    console.log(`sendScrollMessage called for tab ${tabId}, retries: ${retries}`);
-    for (let i = 0; i < retries; i++) {
+  async startScrollingWithDebugger(tabId) {
+    console.log(`Starting debugger-based scrolling for tab ${tabId}`);
+    
+    try {
+      // Attach debugger to the tab
+      await new Promise((resolve, reject) => {
+        chrome.debugger.attach({ tabId: tabId }, "1.0", () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve();
+          }
+        });
+      });
+      
+      console.log(`Debugger attached to tab ${tabId}`);
+      
+      // Enable Runtime domain
+      await new Promise((resolve, reject) => {
+        chrome.debugger.sendCommand({ tabId: tabId }, "Runtime.enable", {}, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve();
+          }
+        });
+      });
+      
+      console.log(`Runtime domain enabled for tab ${tabId}`);
+      
+      // Reset scroll position to top
+      await new Promise((resolve, reject) => {
+        chrome.debugger.sendCommand({ tabId: tabId }, "Runtime.evaluate", {
+          expression: "window.scrollTo(0, 0)"
+        }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve();
+          }
+        });
+      });
+      
+      console.log(`Scroll reset to top for tab ${tabId}`);
+      
+      // Start scrolling after delay
+      setTimeout(() => {
+        this.scrollTabWithDebugger(tabId);
+      }, this.settings.scrollDelay);
+      
+    } catch (error) {
+      console.error(`Failed to start debugger scrolling for tab ${tabId}:`, error.message);
+    }
+  }
+
+  async scrollTabWithDebugger(tabId) {
+    console.log(`Starting auto-scroll for tab ${tabId}`);
+    
+    const scrollInterval = setInterval(async () => {
       try {
-        console.log(`Sending scroll message to tab ${tabId}, attempt ${i + 1}`);
+        // Check if tab still exists and is active
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab || !tab.active) {
+          console.log(`Tab ${tabId} no longer active, stopping scroll`);
+          clearInterval(scrollInterval);
+          this.detachDebugger(tabId);
+          return;
+        }
+        
+        // Scroll down
         await new Promise((resolve, reject) => {
-          chrome.tabs.sendMessage(tabId, {
-            action: 'startScrolling',
-            scrollDelay: this.settings.scrollDelay,
-            scrollSpeed: this.settings.scrollSpeed
-          }, (response) => {
+          chrome.debugger.sendCommand({ tabId: tabId }, "Runtime.evaluate", {
+            expression: `window.scrollBy(0, ${this.settings.scrollSpeed})`
+          }, (result) => {
             if (chrome.runtime.lastError) {
-              console.log(`Chrome runtime error for tab ${tabId}:`, chrome.runtime.lastError.message);
               reject(new Error(chrome.runtime.lastError.message));
             } else {
-              console.log(`Successfully sent scroll message to tab ${tabId}, response:`, response);
-              if (response && response.debug) {
-                console.log(`Content script debug info for tab ${tabId}:`, response.debug);
-              }
-              resolve(response);
+              resolve(result);
             }
           });
         });
-        return; // Success, exit retry loop
+        
+        // Check if we've reached the bottom
+        const reachedBottom = await new Promise((resolve, reject) => {
+          chrome.debugger.sendCommand({ tabId: tabId }, "Runtime.evaluate", {
+            expression: "window.scrollY + window.innerHeight >= document.body.scrollHeight - 10"
+          }, (result) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(result.result.value);
+            }
+          });
+        });
+        
+        if (reachedBottom) {
+          console.log(`Reached bottom of tab ${tabId}, stopping scroll`);
+          clearInterval(scrollInterval);
+          this.detachDebugger(tabId);
+        }
+        
       } catch (error) {
-        console.log(`Scroll message attempt ${i + 1} failed for tab ${tabId}:`, error.message);
-        
-        // If connection failed, try to inject content script
-        if (error.message.includes('Could not establish connection') && i < retries - 1) {
-          console.log(`Attempting to inject content script into tab ${tabId}`);
-          try {
-            await chrome.scripting.executeScript({
-              target: { tabId: tabId },
-              files: ['content.js']
-            });
-            console.log(`Successfully injected content script into tab ${tabId}`);
-          } catch (injectionError) {
-            console.log(`Failed to inject content script into tab ${tabId}:`, injectionError.message);
-          }
-        }
-        
-        if (i < retries - 1) {
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+        console.error(`Error scrolling tab ${tabId}:`, error.message);
+        clearInterval(scrollInterval);
+        this.detachDebugger(tabId);
       }
+    }, 100); // Scroll every 100ms
+  }
+
+  async detachDebugger(tabId) {
+    try {
+      chrome.debugger.detach({ tabId: tabId }, () => {
+        if (chrome.runtime.lastError) {
+          console.log(`Error detaching debugger from tab ${tabId}:`, chrome.runtime.lastError.message);
+        } else {
+          console.log(`Debugger detached from tab ${tabId}`);
+        }
+      });
+    } catch (error) {
+      console.error(`Failed to detach debugger from tab ${tabId}:`, error.message);
     }
-    console.log(`Failed to send scroll message to tab ${tabId} after ${retries} attempts`);
   }
 
   async updateSettings(newSettings) {
