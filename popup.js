@@ -14,6 +14,7 @@ class PopupController {
     this.tabDurationInput = document.getElementById('tabDuration');
     this.scrollDelayInput = document.getElementById('scrollDelay');
     this.scrollSpeedInput = document.getElementById('scrollSpeed');
+    this.scrollSpeedValue = document.getElementById('scrollSpeedValue');
     this.tabCountElement = document.getElementById('tabCount');
 
     // Set up event listeners
@@ -23,7 +24,10 @@ class PopupController {
     // Add input event listeners for real-time settings update
     this.tabDurationInput.addEventListener('input', () => this.updateSettings());
     this.scrollDelayInput.addEventListener('input', () => this.updateSettings());
-    this.scrollSpeedInput.addEventListener('input', () => this.updateSettings());
+    this.scrollSpeedInput.addEventListener('input', () => {
+      this.scrollSpeedValue.textContent = this.scrollSpeedInput.value;
+      this.updateSettings();
+    });
 
     // Load current status and settings
     await this.loadStatus();
@@ -42,6 +46,7 @@ class PopupController {
           this.tabDurationInput.value = Math.round(this.settings.tabDuration / 1000);
           this.scrollDelayInput.value = Math.round(this.settings.scrollDelay / 1000);
           this.scrollSpeedInput.value = this.settings.scrollSpeed;
+          this.scrollSpeedValue.textContent = this.settings.scrollSpeed;
         }
         resolve();
       });
@@ -117,13 +122,15 @@ class PopupController {
       this.scrollDelayInput.value = 60;
       newSettings.scrollDelay = 60000;
     }
-    if (newSettings.scrollSpeed < 10) {
-      this.scrollSpeedInput.value = 10;
-      newSettings.scrollSpeed = 10;
+    if (newSettings.scrollSpeed < 5) {
+      this.scrollSpeedInput.value = 5;
+      this.scrollSpeedValue.textContent = 5;
+      newSettings.scrollSpeed = 5;
     }
-    if (newSettings.scrollSpeed > 200) {
-      this.scrollSpeedInput.value = 200;
-      newSettings.scrollSpeed = 200;
+    if (newSettings.scrollSpeed > 50) {
+      this.scrollSpeedInput.value = 50;
+      this.scrollSpeedValue.textContent = 50;
+      newSettings.scrollSpeed = 50;
     }
 
     this.settings = { ...this.settings, ...newSettings };
