@@ -3,6 +3,8 @@ class TabCycler {
     this.isRunning = false;
     this.tabs = [];
     this.cycleInterval = null;
+    this.keepAliveInterval = null;
+    this.tabStartTime = null;
     this.settings = {
       tabDuration: 5000, // 5 seconds default
       enabled: false,
@@ -137,11 +139,20 @@ class TabCycler {
       return;
     }
 
+    // Record the start time for the current tab
+    this.tabStartTime = Date.now();
 
-    // Set up interval for cycling - start after the first duration
-    this.cycleInterval = setInterval(() => {
-      this.cycleToNextTab();
-    }, this.settings.tabDuration);
+    // Set up a keep-alive interval that runs every 10 seconds to prevent service worker timeout
+    // but only cycle tabs when the full duration has elapsed
+    this.keepAliveInterval = setInterval(() => {
+      const elapsedTime = Date.now() - this.tabStartTime;
+      
+      if (elapsedTime >= this.settings.tabDuration) {
+        this.cycleToNextTab();
+        this.tabStartTime = Date.now(); // Reset timer for next tab
+      }
+      // This interval keeps the service worker alive even during long durations
+    }, 10000); // Check every 10 seconds to keep service worker active
   }
 
   async stop() {
@@ -153,6 +164,14 @@ class TabCycler {
       clearInterval(this.cycleInterval);
       this.cycleInterval = null;
     }
+
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+
+    // Reset tab start time
+    this.tabStartTime = null;
 
     // Stop all scrolling by detaching debuggers
     this.tabs.forEach(tab => {
@@ -308,11 +327,12 @@ class TabCycler {
   }
 
   async updateSettings(newSettings) {
+    const oldTabDuration = this.settings.tabDuration;
     this.settings = { ...this.settings, ...newSettings };
     await this.saveSettings();
 
-    // Restart cycling if running and timing changed
-    if (this.isRunning && (newSettings.tabDuration || newSettings.scrollDelay || newSettings.scrollSpeed)) {
+    // Restart cycling if running and tab duration actually changed
+    if (this.isRunning && newSettings.tabDuration && newSettings.tabDuration !== oldTabDuration) {
       await this.stop();
       await this.start();
     }
